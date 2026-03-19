@@ -1,109 +1,118 @@
 <template>
   <div id="app-container">
     <div class="glass-overlay"></div>
-    <OCRPage />
+    
+    <nav class="main-nav">
+      <div class="nav-logo">
+        <img src="./assets/logo.png" alt="Brahmi OCR" class="logo-img" />
+        <div class="logo-text">
+          <span class="brand">Brahmi OCR</span>
+          <span class="tagline">ANCIENT WISDOM THROUGH AI</span>
+        </div>
+      </div>
+      <div class="nav-links">
+        <router-link to="/" class="nav-item">Home</router-link>
+        <router-link to="/ocr" class="nav-item">OCR Tool</router-link>
+      </div>
+    </nav>
+
+    <main class="content-wrapper">
+      <router-view v-slot="{ Component }">
+        <transition name="fade" mode="out-in">
+          <component :is="Component" />
+        </transition>
+      </router-view>
+    </main>
   </div>
 </template>
 
 <script setup>
-import OCRPage from './views/OCRPage.vue';
+// Logic is now handled by Vue Router
 </script>
 
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
 
 :root {
-  /* Kaavi Art Minimalist Palette */
-  --color-kaavi-plaster: #FDFBF7; /* Clean, warm white plaster */
-  --color-kaavi-red: #8B2C24;     /* Dominant Kaavi Terracotta */
-  --color-kaavi-earth: #B34E42;   /* Lighter earth variation */
-  
-  /* Neutral scale */
+  --color-kaavi-plaster: #FDFBF7;
+  --color-kaavi-red: #8B2C24;
+  --color-kaavi-earth: #B34E42;
   --color-surface: #FFFFFF;
-  --color-surface-hover: #FFF9F8;
-  
-  /* Text */
-  --color-text-primary: #381B18;  /* Very dark warm brown/red */
-  --color-text-secondary: #7A534E; /* Muted earth tone for secondary text */
-  --color-border: #E8D8D5;      /* Plaster tinted border */
-  
-  /* Bounding Box Action Color */
-  --color-success: #10b981; /* Precise Emerald green for boxes */
-  
-  /* Elevation */
-  --shadow-sm: 0 1px 2px 0 rgba(139, 44, 36, 0.05); /* Tinted subtle shadow */
-  --shadow-md: 0 4px 6px -1px rgba(139, 44, 36, 0.05), 0 2px 4px -2px rgba(139, 44, 36, 0.05);
-  --shadow-lg: 0 10px 25px -3px rgba(139, 44, 36, 0.08), 0 4px 6px -4px rgba(139, 44, 36, 0.04);
-  --radius-md: 8px; /* Tighter borders for minimalist structural look */
+  --color-text-primary: #381B18;
+  --color-text-secondary: #7A534E;
+  --color-border: #E8D8D5;
+  --shadow-md: 0 4px 6px -1px rgba(139, 44, 36, 0.05);
   --radius-lg: 12px;
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 body {
   margin: 0;
   padding: 0;
-  font-family: 'Poppins', system-ui, -apple-system, sans-serif;
+  font-family: 'Poppins', sans-serif;
   color: var(--color-text-primary);
   background-color: var(--color-kaavi-plaster);
   overflow-x: hidden;
-  -webkit-font-smoothing: antialiased;
 }
 
 #app-container {
+  min-height: 100vh;
   width: 100vw;
-  height: 100vh;
   position: relative;
+}
+
+/* Navbar Styles */
+.main-nav {
+  position: fixed;
+  top: 0;
+  width: 100%;
+  height: 80px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 5%;
+  background: rgba(253, 251, 247, 0.9);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--color-border);
+  z-index: 1000;
+}
+
+.nav-logo { display: flex; align-items: center; gap: 15px; }
+.logo-img { height: 50px; }
+.logo-text { display: flex; border-left: 2px solid var(--color-border); padding-left: 15px; flex-direction: column; }
+.brand { font-weight: 700; font-size: 1.2rem; color: var(--color-kaavi-red); line-height: 1; }
+.tagline { font-size: 0.65rem; letter-spacing: 1.5px; color: var(--color-text-secondary); margin-top: 4px; }
+
+.nav-links { display: flex; gap: 30px; }
+.nav-item { 
+  text-decoration: none; 
+  color: var(--color-text-secondary); 
+  font-weight: 500;
+  font-size: 0.95rem;
+  padding: 5px 0;
+  transition: 0.3s;
+}
+.nav-item:hover { color: var(--color-kaavi-red); }
+.router-link-active { 
+  color: var(--color-kaavi-red); 
+  border-bottom: 2px solid var(--color-kaavi-red); 
+}
+
+/* Content Wrapper */
+.content-wrapper {
+  padding-top: 100px; /* Space for fixed nav */
   display: flex;
   justify-content: center;
+  width: 100%;
 }
 
-/* Subtle Kaavi Geometric Accent (CSS pattern) */
-.kaavi-border-accent {
-  position: relative;
-}
-.kaavi-border-accent::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 6px;
-  background-image: linear-gradient(135deg, var(--color-kaavi-red) 25%, transparent 25%), 
-                    linear-gradient(225deg, var(--color-kaavi-red) 25%, transparent 25%), 
-                    linear-gradient(45deg, var(--color-kaavi-red) 25%, transparent 25%), 
-                    linear-gradient(315deg, var(--color-kaavi-red) 25%, var(--color-surface) 25%);
-  background-position: 10px 0, 10px 0, 0 0, 0 0;
-  background-size: 20px 20px;
-  background-repeat: repeat-x;
-  border-bottom-left-radius: var(--radius-lg);
-  border-bottom-right-radius: var(--radius-lg);
-  opacity: 0.15; /* Extremely subtle */
-}
+/* Transition Animation */
+.fade-enter-active, .fade-leave-active { transition: opacity 0.25s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
 
-/* Global Scrollbar Formatting */
-::-webkit-scrollbar {
-  width: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--color-kaavi-earth);
-}
-
-button {
-  font-family: 'Poppins', system-ui, -apple-system, sans-serif;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
+/* Global Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-kaavi-earth); }
 </style>
