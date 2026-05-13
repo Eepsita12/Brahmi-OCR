@@ -6,7 +6,7 @@ Ancient Brahmi inscriptions are among the earliest written records of the Indian
 
 ---
 
-## 🚀 Key Features
+## Key Features
 
 - **Image Noise Cleaning & Binarization**: Advanced OpenCV pipelines to remove stone noise, salt-and-pepper artifacts, and binarize the inscriptions using Otsu & Adaptive thresholding.
 - **Smart Character Segmentation**: Automated bounding box detection with aspect ratio normalization and nested box merging.
@@ -17,7 +17,7 @@ Ancient Brahmi inscriptions are among the earliest written records of the Indian
 
 ---
 
-## 🛠️ Technology Stack
+## Technology Stack
 
 ### What is Used:
 **Frontend:**
@@ -42,7 +42,7 @@ Ancient Brahmi inscriptions are among the earliest written records of the Indian
 
 ---
 
-## 🧠 System Architecture & Workflow
+## System Architecture & Workflow
 
 The system follows a highly modular, multi-step pipeline to process an uploaded image of a Brahmi inscription.
 
@@ -71,9 +71,18 @@ The system follows a highly modular, multi-step pipeline to process an uploaded 
 2. The `roman_to_devanagari` mapping converts this into Devanagari script (e.g., "क", "ख") using `transliteration_mapping.json`.
 3. The API returns the bounding boxes, confidence scores, transliterated text, and a base64 composite image showing the GAN-restored characters back in their original positions.
 
+<img width="1280" height="448" alt="image" src="https://github.com/user-attachments/assets/cae79bc1-2580-47ac-b08f-74e327ba7267" />
+
 ---
 
-## ⚙️ Installation & Setup
+## Results
+
+<img width="1280" height="610" alt="image" src="https://github.com/user-attachments/assets/07cd9fd4-bfc0-40e3-9cc9-ed5f99641cab" />
+
+<img width="1280" height="557" alt="image" src="https://github.com/user-attachments/assets/b5fbb331-7e11-4307-ad21-9ef61ec33cfb" />
+
+
+## Installation & Setup
 
 ### Prerequisites
 - **Node.js**: v20.19.0 or higher
@@ -119,7 +128,7 @@ npm run dev
 
 ---
 
-## 📡 API Endpoints
+## API Endpoints
 
 The Flask backend exposes the following REST endpoints:
 
@@ -129,5 +138,10 @@ The Flask backend exposes the following REST endpoints:
 
 ---
 
-## 📜 License
+## Performance
+- 99.91% peak validation accuracy
+- 214 Ashokan Brahmi classes
+- ~227,000 augmented training images
+
+## License
 This project workflow and associated machine learning models are developed for interpreting and preserving Brahmi scripts.
