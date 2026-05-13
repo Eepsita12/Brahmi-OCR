@@ -23,8 +23,10 @@
       <div class="canvas-card kaavi-border-accent">
         <div class="toolbar">
           <div class="toolbar-left">
-            <h3>GAN-Restored Image</h3>
-            <span class="badge">Refine</span>
+            <h3>{{ phase === 'segmentation' ? 'Detected Boxes' : 'GAN-Restored Image' }}</h3>
+            <span class="badge" :class="phase === 'segmentation' ? 'badge-review' : ''">
+              {{ phase === 'segmentation' ? 'Review Boxes' : 'Refine' }}
+            </span>
           </div>
           <div class="toolbar-right">
             <label class="switch-container">
@@ -50,7 +52,7 @@
             @mousedown="startDrawing" 
             @mousemove="draw" 
             @mouseup="stopDrawing"
-            @click="handleCanvasClick"
+            @mouseleave="cancelDrawing"
             :class="{ 'is-drawing': isDrawing, 'pointer-events-none': !showBoundingBoxes }"
             class="interactive-canvas"
           ></canvas>
@@ -59,12 +61,36 @@
           </div>
         </div>
         <div class="canvas-footer">
-          Click a box to delete • Drag to draw new box
+          <span class="footer-legend">
+            <span class="legend-dot green"></span> High confidence
+            <span class="legend-dot red"></span> Low confidence — reshape red boxes &amp; re-analyze
+          </span>
+          <span class="footer-hint">Click a box to delete • Drag to draw new box</span>
         </div>
       </div>
 
-      <!-- Action Bar Footer -->
-      <div class="action-bar kaavi-border-accent">
+      <!-- Phase 1: Segmentation — Apply GAN button -->
+      <div v-if="phase === 'segmentation'" class="action-bar kaavi-border-accent">
+        <div class="phase-hint">
+          <svg viewBox="0 0 24 24" fill="none" width="14" height="14" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          <span>Review boxes, edit if needed, then apply GAN restoration</span>
+        </div>
+        <button
+          @click="applyGAN"
+          :disabled="isApplyingGAN || currentBoxes.length === 0"
+          class="btn-primary"
+        >
+          <svg v-if="isApplyingGAN" class="spinner" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-dasharray="32" stroke-dashoffset="0" stroke-linecap="round"></circle>
+          </svg>
+          <span>{{ isApplyingGAN ? 'Restoring...' : 'Apply GAN Restoration' }}</span>
+        </button>
+      </div>
+
+      <!-- Phase 2: Restoration — Decipher button -->
+      <div v-if="phase === 'restoration'" class="action-bar kaavi-border-accent">
         <div class="input-group">
           <label>OCR Engine</label>
           <div class="select-wrapper">
@@ -91,29 +117,27 @@
         </button>
       </div>
 
+
+
       <!-- Result Sections -->
       <div v-if="predictionResults" class="results-stack">
-        <!-- Brahmi Script Card -->
-        <div class="result-tile kaavi-border-accent">
-          <div class="tile-header">
-            <h4>Brahmi Script</h4>
-          </div>
-          <div class="tile-content brahmi-font">
-            {{ predictionResults.recognized_brahmi_ascii }}
-          </div>
-        </div>
-
         <!-- Transliteration Card -->
         <div class="result-tile kaavi-border-accent">
           <div class="tile-header header-spread">
-            <h4>Transliteration</h4>
+            <h4>Transliteration &amp; Script</h4>
             <div class="segmented-control">
-              <button :class="{ active: isLatin }" @click="isLatin = true">Latin</button>
-              <button :class="{ active: !isLatin }" @click="isLatin = false">Devanagari</button>
+              <button :class="{ active: transliterationMode === 'latin' }" @click="transliterationMode = 'latin'">Latin</button>
+              <button :class="{ active: transliterationMode === 'devanagari' }" @click="transliterationMode = 'devanagari'">Devanagari</button>
+              <button :class="{ active: transliterationMode === 'brahmi' }" @click="transliterationMode = 'brahmi'">Brahmi</button>
             </div>
           </div>
-          <div class="tile-content" :class="{ 'devanagari-font': !isLatin }">
-            {{ isLatin ? predictionResults.top_prediction : predictionResults.top_prediction_devanagari }}
+
+          <div class="tile-content" :class="{ 'devanagari-font': transliterationMode === 'devanagari', 'brahmi-font': transliterationMode === 'brahmi' }">
+            {{ 
+              transliterationMode === 'latin' ? predictionResults.top_prediction : 
+              transliterationMode === 'devanagari' ? predictionResults.top_prediction_devanagari :
+              predictionResults.top_prediction_brahmi
+            }}
           </div>
         </div>
         
@@ -150,12 +174,20 @@ const props = defineProps({
 
 // --- State ---
 const API_URL = 'http://localhost:5000';
-const isLatin = ref(true);
+const transliterationMode = ref('latin'); // 'latin', 'devanagari', 'brahmi'
 const isDeciphering = ref(false);
+const isApplyingGAN = ref(false);
 const showBoundingBoxes = ref(true);
 const selectedModel = ref('Ensemble');
 const currentBoxes = ref([]); 
 const predictionResults = ref(null);
+const phase = ref('segmentation'); // 'segmentation' | 'restoration'
+
+// Confidence-loop state
+// Set of box indices that are low-confidence (to be drawn in red)
+const lowConfBoxIndices = ref(new Set());
+const refinementIteration = ref(0);
+const showRefinementBanner = ref(false);
 
 // Canvas Refs & State
 const interactiveCanvas = ref(null);
@@ -166,9 +198,14 @@ const startY = ref(0);
 const currentX = ref(0);
 const currentY = ref(0);
 
-// Source images
-const restoredImageSrc = computed(() => {
-  return props.initialData ? `data:image/jpeg;base64,${props.initialData.restored_image_b64}` : '';
+// Source images — canvas shows different image depending on phase
+const canvasImageSrc = computed(() => {
+  if (!props.initialData) return '';
+  // In segmentation phase: show original (no GAN). In restoration: show GAN result.
+  const b64 = phase.value === 'restoration' && props.initialData.restored_image_b64
+    ? props.initialData.restored_image_b64
+    : props.initialData.original_image_b64;
+  return `data:image/jpeg;base64,${b64}`;
 });
 
 // Image object for canvas operations
@@ -199,7 +236,7 @@ const initCanvas = () => {
     
     renderCanvas();
   };
-  img.src = restoredImageSrc.value;
+  img.src = canvasImageSrc.value;
 };
 
 const renderCanvas = () => {
@@ -215,12 +252,30 @@ const renderCanvas = () => {
 
   const scale = canvas.width / offscreenImg.width;
 
-  // Draw Boxes
+  // Draw Boxes — red for low-confidence, green for high-confidence
   ctx.lineWidth = 2;
-  currentBoxes.value.forEach((box) => {
+  currentBoxes.value.forEach((box, idx) => {
     const [x, y, w, h] = box;
-    ctx.strokeStyle = '#10b981'; // Emerald Green
-    ctx.strokeRect(x * scale, y * scale, w * scale, h * scale);
+    const isLowConf = lowConfBoxIndices.value.has(idx);
+    if (isLowConf) {
+      // Red pulsing box for low-confidence
+      ctx.strokeStyle = '#ef4444';
+      ctx.setLineDash([5, 3]);
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(x * scale, y * scale, w * scale, h * scale);
+      ctx.setLineDash([]);
+      ctx.lineWidth = 2;
+      // Red semi-transparent fill
+      ctx.fillStyle = 'rgba(239, 68, 68, 0.08)';
+      ctx.fillRect(x * scale, y * scale, w * scale, h * scale);
+      // Small badge
+      ctx.fillStyle = '#ef4444';
+      ctx.font = `bold ${Math.max(10, 12 * scale)}px Inter, sans-serif`;
+      ctx.fillText('!', x * scale + 3, y * scale + Math.max(12, 14 * scale));
+    } else {
+      ctx.strokeStyle = '#10b981'; // Emerald Green
+      ctx.strokeRect(x * scale, y * scale, w * scale, h * scale);
+    }
   });
   
   if (isDrawing.value) {
@@ -305,31 +360,31 @@ const stopDrawing = (e) => {
     }
 
     renderCanvas();
+  } else {
+    // Treat as a click (delete box)
+    const scale = offscreenImg.width / interactiveCanvas.value.width;
+    const realX = endX * scale;
+    const realY = endY * scale;
+
+    let boxToRemove = -1;
+    for (let i = currentBoxes.value.length - 1; i >= 0; i--) {
+      const [x, y, w, h] = currentBoxes.value[i];
+      if (realX >= x && realX <= x + w && realY >= y && realY <= y + h) {
+        boxToRemove = i;
+        break;
+      }
+    }
+
+    if (boxToRemove !== -1) {
+      currentBoxes.value.splice(boxToRemove, 1);
+      renderCanvas();
+    }
   }
 };
 
-const handleCanvasClick = (e) => {
-  if (isDrawing.value || !showBoundingBoxes.value) return;
-  
-  const rect = interactiveCanvas.value.getBoundingClientRect();
-  const clickX = e.clientX - rect.left;
-  const clickY = e.clientY - rect.top;
-  const scale = offscreenImg.width / interactiveCanvas.value.width;
-  
-  const realX = clickX * scale;
-  const realY = clickY * scale;
-
-  let boxToRemove = -1;
-  for (let i = currentBoxes.value.length - 1; i >= 0; i--) {
-    const [x, y, w, h] = currentBoxes.value[i];
-    if (realX >= x && realX <= x + w && realY >= y && realY <= y + h) {
-      boxToRemove = i;
-      break;
-    }
-  }
-
-  if (boxToRemove !== -1) {
-    currentBoxes.value.splice(boxToRemove, 1);
+const cancelDrawing = () => {
+  if (isDrawing.value) {
+    isDrawing.value = false;
     renderCanvas();
   }
 };
@@ -341,10 +396,50 @@ const clearAllBoxes = () => {
 
 // --- API ---
 
+// Phase 1 → Phase 2: call /process with user-confirmed boxes
+const applyGAN = async () => {
+  if (currentBoxes.value.length === 0) return;
+  isApplyingGAN.value = true;
+
+  try {
+    const response = await fetch(`${API_URL}/process`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image: props.initialData.original_image_b64,
+        boxes: currentBoxes.value
+      })
+    });
+    const data = await response.json();
+    if (data.success) {
+      // 1) Change local phase first so canvasImageSrc switches
+      phase.value = 'restoration';
+      
+      // 2) Mutate initialData silently (watcher ignores this because phase != 'segmentation')
+      props.initialData.phase = 'restoration';
+      props.initialData.restored_image_b64 = data.restored_image_b64;
+      props.initialData.initial_boxes = data.boxes;
+      currentBoxes.value = [...data.boxes];
+      
+      // 3) Reload canvas with GAN-restored image
+      const img = new Image();
+      img.onload = () => { offscreenImg = img; renderCanvas(); };
+      img.src = `data:image/jpeg;base64,${data.restored_image_b64}`;
+    } else {
+      console.error('GAN restoration failed:', data.error);
+    }
+  } catch (err) {
+    console.error('applyGAN error:', err);
+  } finally {
+    isApplyingGAN.value = false;
+  }
+};
+
 const decipherCharacters = async () => {
   if (currentBoxes.value.length === 0) return;
   isDeciphering.value = true;
   predictionResults.value = null;
+  showRefinementBanner.value = false;
 
   try {
     const response = await fetch(`${API_URL}/predict`, {
@@ -360,6 +455,25 @@ const decipherCharacters = async () => {
     const data = await response.json();
     if (data.success) {
       predictionResults.value = data;
+
+      // Build the low-confidence set from the per-prediction results
+      const newLowConf = new Set();
+      if (data.predictions) {
+        data.predictions.forEach((pred, idx) => {
+          if (pred.low_confidence) newLowConf.add(idx);
+        });
+      }
+      lowConfBoxIndices.value = newLowConf;
+
+      if (newLowConf.size > 0) {
+        refinementIteration.value += 1;
+        showRefinementBanner.value = true;
+      } else {
+        showRefinementBanner.value = false;
+      }
+
+      // Re-render canvas to show red/green boxes
+      renderCanvas();
     } else {
       console.error(data.error);
     }
@@ -368,6 +482,12 @@ const decipherCharacters = async () => {
   } finally {
     isDeciphering.value = false;
   }
+};
+
+// Re-analyze — called from refinement banner after user reshapes boxes
+const reAnalyze = () => {
+  refinementIteration.value = 0;
+  decipherCharacters();
 };
 
 const downloadReport = async () => {
@@ -381,9 +501,17 @@ const downloadReport = async () => {
 
 // --- Lifecycle ---
 
-watch(() => props.initialData, () => {
-  predictionResults.value = null;
-  setTimeout(initCanvas, 100);
+watch(() => props.initialData, (newData, oldData) => {
+  // Only completely reset if it's explicitly a NEW upload (from FileUploader)
+  // FileUploader now explicitly sets phase: 'segmentation'
+  if (newData && newData.phase === 'segmentation') {
+    predictionResults.value = null;
+    phase.value = 'segmentation';
+    lowConfBoxIndices.value = new Set();
+    refinementIteration.value = 0;
+    showRefinementBanner.value = false;
+    setTimeout(initCanvas, 100);
+  }
 }, { deep: true });
 
 watch(showBoundingBoxes, () => renderCanvas());
@@ -518,6 +646,11 @@ onUnmounted(() => window.removeEventListener('resize', initCanvas));
   padding: 4px 10px;
   border-radius: 9999px;
   letter-spacing: 0.5px;
+}
+
+.badge-review {
+  background-color: rgba(59, 130, 246, 0.1); /* Blue tint */
+  color: #2563eb; /* Blue 600 */
 }
 
 .toolbar-right {
@@ -672,6 +805,16 @@ onUnmounted(() => window.removeEventListener('resize', initCanvas));
   box-shadow: var(--shadow-sm);
 }
 
+.phase-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  margin-right: auto;
+  align-self: center;
+}
+
 .input-group {
   display: flex;
   flex-direction: column;
@@ -803,9 +946,11 @@ onUnmounted(() => window.removeEventListener('resize', initCanvas));
 }
 
 .brahmi-font {
-  font-family: "Segoe UI Historic", "Noto Sans Brahmi", sans-serif;
+  font-family: "Noto Sans Brahmi", "Segoe UI Historic", sans-serif;
   font-size: 2rem;
   letter-spacing: 4px;
+  line-height: 1.4;
+  color: var(--color-text-primary);
 }
 
 .devanagari-font {
@@ -879,5 +1024,41 @@ onUnmounted(() => window.removeEventListener('resize', initCanvas));
     flex-direction: column;
     align-items: stretch;
   }
+}
+
+/* ── Canvas Footer Legend ─────────────────────────────────────── */
+.canvas-footer {
+  padding: 8px 16px;
+  background-color: white;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.footer-legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 3px;
+  vertical-align: middle;
+}
+
+.legend-dot.green { background-color: #10b981; }
+.legend-dot.red   { background-color: #ef4444; }
+
+.footer-hint {
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
 }
 </style>
