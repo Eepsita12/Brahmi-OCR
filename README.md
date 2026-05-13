@@ -143,5 +143,11 @@ The Flask backend exposes the following REST endpoints:
 - 214 Ashokan Brahmi classes
 - ~227,000 augmented training images
 
+## Contributors
+Developed as a team project by:
+- Eepsita Modi
+- Siddhesh Rane
+- Ronit Waghambare
+
 ## License
 This project workflow and associated machine learning models are developed for interpreting and preserving Brahmi scripts.
